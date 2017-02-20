@@ -1,7 +1,6 @@
 package com.orangefunction.tomcat.redissessions;
 
 import org.apache.catalina.*;
-import org.apache.catalina.util.LifecycleSupport;
 import org.apache.catalina.session.ManagerBase;
 
 
@@ -68,11 +67,6 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
   protected String serializationStrategyClass = "com.orangefunction.tomcat.redissessions.JavaSerializer";
 
   protected EnumSet<SessionPersistPolicy> sessionPersistPoliciesSet = EnumSet.of(SessionPersistPolicy.DEFAULT);
-
-  /**
-   * The lifecycle event support for this component.
-   */
-  protected LifecycleSupport lifecycle = new LifecycleSupport(this);
 
   public String getHost() {
     return host;
@@ -229,7 +223,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
    */
   @Override
   public void addLifecycleListener(LifecycleListener listener) {
-    lifecycle.addLifecycleListener(listener);
+    this.addLifecycleListener(listener);
   }
 
   /**
@@ -238,7 +232,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
    */
   @Override
   public LifecycleListener[] findLifecycleListeners() {
-    return lifecycle.findLifecycleListeners();
+    return this.findLifecycleListeners();
   }
 
 
@@ -249,7 +243,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
    */
   @Override
   public void removeLifecycleListener(LifecycleListener listener) {
-    lifecycle.removeLifecycleListener(listener);
+    this.removeLifecycleListener(listener);
   }
 
   /**
@@ -266,7 +260,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
     setState(LifecycleState.STARTING);
 
     Boolean attachedToValve = false;
-    for (Valve valve : getContainer().getPipeline().getValves()) {
+    for (Valve valve : getContext().getPipeline().getValves()) {
       if (valve instanceof RedisSessionHandlerValve) {
         this.handlerValve = (RedisSessionHandlerValve) valve;
         this.handlerValve.setRedisSessionManager(this);
@@ -289,11 +283,10 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
       throw new LifecycleException(e);
     }
 
-    log.info("Will expire sessions after " + getMaxInactiveInterval() + " seconds");
+    log.info("Will expire sessions after " + getContext().getSessionTimeout() + " seconds");
 
     initializeDatabaseConnection();
-
-    setDistributable(true);
+    getContext().setDistributable(true);
   }
 
 
@@ -314,7 +307,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
 
     try {
       connectionPool.destroy();
-    } catch(Exception e) {
+    } catch (Exception e) {
       // Do nothing.
     }
 
@@ -354,11 +347,11 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
       error = false;
 
       if (null != sessionId) {
-        session = (RedisSession)createEmptySession();
+        session = (RedisSession) createEmptySession();
         session.setNew(true);
         session.setValid(true);
         session.setCreationTime(System.currentTimeMillis());
-        session.setMaxInactiveInterval(getMaxInactiveInterval());
+        session.setMaxInactiveInterval(getContext().getSessionTimeout());
         session.setId(sessionId);
         session.tellNew();
       }
@@ -516,17 +509,17 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
       throw new IOException("Serialized session data was equal to NULL_SESSION");
     }
 
-    RedisSession session = null;
+    RedisSession session;
     SessionSerializationMetadata metadata = new SessionSerializationMetadata();
 
     try {
-      session = (RedisSession)createEmptySession();
+      session = (RedisSession) createEmptySession();
 
       serializer.deserializeInto(data, session, metadata);
 
       session.setId(id);
       session.setNew(false);
-      session.setMaxInactiveInterval(getMaxInactiveInterval());
+      session.setMaxInactiveInterval(getContext().getSessionTimeout());
       session.access();
       session.setValid(true);
       session.resetDirtyTracking();
@@ -534,7 +527,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
       if (log.isTraceEnabled()) {
         log.trace("Session Contents [" + id + "]:");
         Enumeration en = session.getAttributeNames();
-        while(en.hasMoreElements()) {
+        while (en.hasMoreElements()) {
           log.trace("  " + en.nextElement());
         }
       }
@@ -572,12 +565,12 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
     try {
       log.trace("Saving session " + session + " into Redis");
 
-      RedisSession redisSession = (RedisSession)session;
+      RedisSession redisSession = (RedisSession) session;
 
       if (log.isTraceEnabled()) {
         log.trace("Session Contents [" + redisSession.getId() + "]:");
         Enumeration en = redisSession.getAttributeNames();
-        while(en.hasMoreElements()) {
+        while (en.hasMoreElements()) {
           log.trace("  " + en.nextElement());
         }
       }
@@ -614,8 +607,8 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
         log.trace("Save was determined to be unnecessary");
       }
 
-      log.trace("Setting expire timeout on session [" + redisSession.getId() + "] to " + getMaxInactiveInterval());
-      jedis.expire(binaryId, getMaxInactiveInterval());
+      log.trace("Setting expire timeout on session [" + redisSession.getId() + "] to " + getContext().getSessionTimeout());
+      jedis.expire(binaryId, getContext().getSessionTimeout());
 
       error = false;
 
@@ -875,7 +868,7 @@ public class RedisSessionManager extends ManagerBase implements Lifecycle {
 class DeserializedSessionContainer {
   public final RedisSession session;
   public final SessionSerializationMetadata metadata;
-  public DeserializedSessionContainer(RedisSession session, SessionSerializationMetadata metadata) {
+  DeserializedSessionContainer(RedisSession session, SessionSerializationMetadata metadata) {
     this.session = session;
     this.metadata = metadata;
   }
